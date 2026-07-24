@@ -120,12 +120,14 @@ footer{color:var(--ink-soft);font-size:.78rem;margin:18px 2px 30px;line-height:1
   </div>
   <div class="row" style="margin-top:10px">
     <button class="btn sm" id="addSurf">＋ 面を追加</button>
-    <span class="muted" style="font-size:.8rem">（グルストランド模型眼は面が6枚。面を増やせば眼の計算もできます）</span>
+    <button class="btn sm" id="delSurf">− 面を減らす</button>
+    <span class="muted" style="font-size:.8rem">（各行の × でも削除可。面を増やせば眼の計算もできます）</span>
   </div>
   <div class="ray-in">
     <label>入射光線の高さ y₀ (mm)<input type="number" id="y0" value="1" step="0.1"></label>
+    <label>物体距離 s₀ (mm・前方)<input type="number" id="s0" step="1" placeholder="∞ (空欄=平行光)"></label>
     <label>入射光線の傾き u₀<input type="number" id="u0" value="0" step="0.01"></label>
-    <span class="muted" style="font-size:.78rem;padding-bottom:6px">u₀ = 0 は「無限遠からの平行光」。まずはこのままでOK。</span>
+    <span class="muted" id="objHint" style="font-size:.78rem;padding-bottom:6px">物体距離を入れると u₀ を自動計算（空欄＝無限遠＝平行光）。</span>
   </div>
 </section>
 
@@ -227,6 +229,7 @@ function loadPreset(key){
   const p = PRESETS[key];
   S.surfaces = p.surfaces.map(s=>({...s}));
   S.y0 = p.y0; S.u0 = p.u0;
+  $("s0").value=""; $("u0").disabled=false;
   $("y0").value = p.y0; $("u0").value = p.u0;
   renderSetup(); resetTrace();
 }
@@ -284,9 +287,11 @@ function cardinal(surfaces, n0){
 }
 
 /* ---------- number format ---------- */
-function fmt(x, d=4){
+function fmt(x, d){
   if(!isFinite(x)) return "∞";
-  let v = Number(x.toFixed(d));
+  if(d!==undefined){ let v=Number(x.toFixed(d)); if(Object.is(v,-0)) v=0; return String(v); }
+  if(x===0) return "0";
+  let v=Number(x.toPrecision(6));   // 計算値は有効数字6桁＝手で検算できる精度
   if(Object.is(v,-0)) v=0;
   return String(v);
 }
@@ -371,13 +376,15 @@ function step_transfer(k,rw,rwn){
 /* ---------- trace table render ---------- */
 function renderTrace(){
   const t=$("traceTbl");
-  let h=`<tr><th>面</th><th>r<br><small>mm</small></th><th>n<br><small>後ろ</small></th>
+  let h=`<tr><th>面</th><th>r<br><small>mm</small></th><th>d<br><small>mm・次まで</small></th><th>n<br><small>後ろ</small></th>
     <th>c<br><small>=1/r</small></th><th>y<br><small>高さ</small></th>
     <th>i<br><small>入射角</small></th><th>i′<br><small>屈折角</small></th><th>u′<br><small>傾き</small></th></tr>`;
   S.surfaces.forEach((s,k)=>{
+    const isLast=k===S.surfaces.length-1;
     h+=`<tr>
       <td class="fixcol">${k+1}</td>
       <td class="fixcol">${fmt(s.r,3)}</td>
+      <td class="fixcol">${isLast?"—":fmt(s.d,3)}</td>
       <td class="fixcol">${fmt(s.n,3)}</td>
       ${cell(k,"c")}${cell(k,"y")}${cell(k,"i")}${cell(k,"ip")}${cell(k,"up")}
     </tr>`;
@@ -405,7 +412,17 @@ function cell(k,col){
 /* ---------- step engine ---------- */
 function resetTrace(){
   S.y0=parseFloat($("y0").value)||0;
-  S.u0=parseFloat($("u0").value)||0;
+  const s0=parseFloat($("s0").value);
+  if(isFinite(s0) && s0!==0){
+    S.u0 = -S.y0/s0;                         // 物体距離 s0(mm前方) → 入射角 u₀ = −y₀/s₀
+    $("u0").value = String(Number(S.u0.toPrecision(6)));
+    $("u0").disabled = true;
+    $("objHint").textContent = `物体が前方 ${s0}mm → u₀ = −y₀/s₀ = ${fmt(S.u0)}（自動計算）`;
+  } else {
+    $("u0").disabled = false;
+    S.u0=parseFloat($("u0").value)||0;
+    $("objHint").textContent = "物体距離を入れると u₀ を自動計算（空欄＝無限遠＝平行光）。";
+  }
   buildSteps();
   stepIdx=-1;
   renderTrace();  // ※ 値編集ごとに setup 表を作り直すとフォーカスが外れるので、ここでは再描画しない
@@ -588,7 +605,9 @@ $("addSurf").addEventListener("click",()=>{
   renderSetup(); resetTrace();
 });
 $("y0").addEventListener("input",resetTrace);
+$("s0").addEventListener("input",resetTrace);
 $("u0").addEventListener("input",resetTrace);
+$("delSurf").addEventListener("click",()=>{ if(S.surfaces.length>1){ S.surfaces.pop(); renderSetup(); resetTrace(); } });
 $("manual").addEventListener("change",e=>{ manual=e.target.checked; if(stepIdx>=0&&stepIdx<STEPS.length) showStep(); });
 $("nextBtn").addEventListener("click",()=>{ if(stepIdx<0){stepIdx=0;showStep();} else nextStep(); });
 $("allBtn").addEventListener("click",runAll);
